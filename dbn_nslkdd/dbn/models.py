@@ -1,6 +1,5 @@
-from abc import ABCMeta, abstractmethod
-
 import numpy as np
+from abc import ABCMeta, abstractmethod
 from scipy.stats import truncnorm
 from sklearn.base import BaseEstimator, TransformerMixin, ClassifierMixin, RegressorMixin
 
@@ -84,6 +83,9 @@ class BinaryRBM(BaseEstimator, TransformerMixin, BaseModel):
             return self._compute_hidden_units(X)
         transformed_data = self._compute_hidden_units_matrix(X)
         return transformed_data
+
+    def reconstruct(self, transformed_data):
+        return self._reconstruct(transformed_data)
 
     def _reconstruct(self, transformed_data):
         """
@@ -286,6 +288,42 @@ class UnsupervisedDBN(BaseEstimator, TransformerMixin, BaseModel):
             input_data = rbm.transform(input_data)
         return input_data
 
+    def reconstruct(self, H):
+        """
+        Reconstructs the visible layer from the last hidden layer
+        :param H: aray-like, shape = (n_samples, n_features)
+        :return:
+        """
+        hidden_values = H
+        for rbm in reversed(self.rbm_layers):
+            hidden_values = rbm.reconstruct(hidden_values)
+        return hidden_values
+
+    def reconstruct_k(self, X, k):
+        """
+        Makes k reconstructions
+        :param X: input data, array-like, shape=(n_samples, n_features)
+        :param k: number of reconstruction passes
+        :return: reconstructed input
+        """
+        data = X
+        for i in range(k):
+            z = self.transform(data)
+            data = self.reconstruct(z)
+        return data
+
+    def impute(self, X_missing, k=1):
+        """
+        Impute missing values, represnted as nan
+        :param X_missing: input array with missing values, shape=(n_samples, n_features)
+        :param k: number of reconstruction passes
+        :return: input with filled values (instead of missing values)
+        """
+        data = X_missing
+        data = np.nan_to_num(data)
+        data = self.reconstruct_k(data, k)
+        return data
+
 
 class AbstractSupervisedDBN(BaseEstimator, BaseModel):
     """
@@ -454,14 +492,14 @@ class NumPyAbstractSupervisedDBN(AbstractSupervisedDBN):
                 for rbm in self.unsupervised_dbn.rbm_layers:
                     # Updating parameters of hidden layers
                     rbm.W = (1 - (
-                        self.learning_rate * self.l2_regularization) / num_samples) * rbm.W - self.learning_rate * (
-                        accum_delta_W[layer] / self.batch_size)
+                            self.learning_rate * self.l2_regularization) / num_samples) * rbm.W - self.learning_rate * (
+                                    accum_delta_W[layer] / self.batch_size)
                     rbm.c -= self.learning_rate * (accum_delta_bias[layer] / self.batch_size)
                     layer += 1
                 # Updating parameters of output layer
                 self.W = (1 - (
-                    self.learning_rate * self.l2_regularization) / num_samples) * self.W - self.learning_rate * (
-                    accum_delta_W[layer] / self.batch_size)
+                        self.learning_rate * self.l2_regularization) / num_samples) * self.W - self.learning_rate * (
+                                 accum_delta_W[layer] / self.batch_size)
                 self.b -= self.learning_rate * (accum_delta_bias[layer] / self.batch_size)
 
             if self.verbose:
